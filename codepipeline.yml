@@ -77,7 +77,7 @@ Resources:
                 Owner: lambarahul9650
                 Repo: java
                 Branch: master
-                OAuthToken: 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
+                OAuthToken: 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
 
         - Name: DeployVPC
           Actions:
