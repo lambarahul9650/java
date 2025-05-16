@@ -1,0 +1,197 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CodePipeline with all infrastructure deployments
+
+Resources:
+
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  CodePipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSCloudFormationFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+
+  PipelineCloudFormationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudFormationDeployPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DeleteStack
+                  - iam:PassRole
+                Resource: "*"
+
+  CodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    DependsOn:
+      - CodePipelineServiceRole
+      - ArtifactBucket
+      - PipelineCloudFormationRole
+    Properties:
+      Name: java-fullstack-pipeline
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Provider: GitHub
+                Version: 1
+              OutputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                Owner: lambarahul9650
+                Repo: java
+                Branch: master
+                OAuthToken: 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
+
+        - Name: DeployVPC
+          Actions:
+            - Name: VPCStack
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: 1
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: VPCOutput
+              Configuration:
+                RoleArn: !GetAtt PipelineCloudFormationRole.Arn
+                ActionMode: CREATE_UPDATE
+                StackName: MyVPCStack
+                TemplatePath: SourceOutput::vpc.yml
+                Capabilities: CAPABILITY_NAMED_IAM
+
+        - Name: DeploySecurityGroups
+          Actions:
+            - Name: SGStack
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: 1
+              InputArtifacts:
+                - Name: VPCOutput
+              OutputArtifacts:
+                - Name: SGOutput
+              Configuration:
+                RoleArn: !GetAtt PipelineCloudFormationRole.Arn
+                ActionMode: CREATE_UPDATE
+                StackName: MySecurityGroupsStack
+                TemplatePath: SourceOutput::security-groups.yml
+                Capabilities: CAPABILITY_NAMED_IAM
+
+        - Name: DeployS3Endpoint
+          Actions:
+            - Name: S3EndpointStack
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: 1
+              InputArtifacts:
+                - Name: SGOutput
+              OutputArtifacts:
+                - Name: S3EndpointOutput
+              Configuration:
+                RoleArn: !GetAtt PipelineCloudFormationRole.Arn
+                ActionMode: CREATE_UPDATE
+                StackName: MyS3VpcEndpointStack
+                TemplatePath: SourceOutput::s3-vpcendpoint.yml
+                Capabilities: CAPABILITY_NAMED_IAM
+
+        - Name: DeployRDS
+          Actions:
+            - Name: RDSStack
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: 1
+              InputArtifacts:
+                - Name: S3EndpointOutput
+              OutputArtifacts:
+                - Name: RDSOutput
+              Configuration:
+                RoleArn: !GetAtt PipelineCloudFormationRole.Arn
+                ActionMode: CREATE_UPDATE
+                StackName: MyRDSStack
+                TemplatePath: SourceOutput::rds-postgres.yml
+                Capabilities: CAPABILITY_NAMED_IAM
+
+        - Name: DeployALB
+          Actions:
+            - Name: ALBStack
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: 1
+              InputArtifacts:
+                - Name: RDSOutput
+              OutputArtifacts:
+                - Name: ALBOutput
+              Configuration:
+                RoleArn: !GetAtt PipelineCloudFormationRole.Arn
+                ActionMode: CREATE_UPDATE
+                StackName: MyALBStack
+                TemplatePath: SourceOutput::alb.yml
+                Capabilities: CAPABILITY_NAMED_IAM
+
+        - Name: DeployAutoScaling
+          Actions:
+            - Name: AutoScalingStack
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: 1
+              InputArtifacts:
+                - Name: ALBOutput
+              Configuration:
+                RoleArn: !GetAtt PipelineCloudFormationRole.Arn
+                ActionMode: CREATE_UPDATE
+                StackName: MyAutoScalingStack
+                TemplatePath: SourceOutput::ec2-autoscaling.yml
+                Capabilities: CAPABILITY_NAMED_IAM
+
+Outputs:
+  CodePipelineName:
+    Value: !Ref CodePipeline
+    Description: Name of the created CodePipeline

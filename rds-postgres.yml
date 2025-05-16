@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: RDS Postgres Instance
+
+Parameters:
+  DBName:
+    Type: String
+    Default: demoappdb
+    Description: The name of the initial database to create
+
+  DBUser:
+    Type: String
+    Default: admin
+    Description: The database admin username
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: The database admin password
+
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+    Description: Size of the RDS database (GB)
+
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    AllowedValues:
+      - db.t3.micro
+      - db.t3.small
+      - db.t3.medium
+      - db.t2.micro
+      - db.t2.small
+    Description: The RDS instance type
+
+  VPCSecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    Description: Security groups to associate with RDS instance
+
+  DBSubnetGroupName:
+    Type: String
+    Description: Subnet group name for RDS (created separately)
+
+  MultiAZ:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Whether to deploy Multi-AZ
+
+Resources:
+
+  PostgresDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName: !Ref DBName
+      AllocatedStorage: !Ref DBAllocatedStorage
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: postgres
+      EngineVersion: "13.7"
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      VPCSecurityGroups: !Ref VPCSecurityGroupIds
+      DBSubnetGroupName: !Ref DBSubnetGroupName
+      MultiAZ: !Ref MultiAZ
+      PubliclyAccessible: false
+      StorageType: gp2
+      BackupRetentionPeriod: 7
+      DeletionProtection: false
+      Tags:
+        - Key: Name
+          Value: DemoAppPostgresDB
+
+  RDSSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnets for RDS DB Instance
+      SubnetIds:
+        - !Select [0, !Ref PrivateSubnetIds]
+        - !Select [1, !Ref PrivateSubnetIds]
+      Tags:
+        - Key: Name
+          Value: DemoAppRDSSubnetGroup
+
+Parameters:
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: List of private subnet IDs for RDS
+
+Outputs:
+  RDSInstanceEndpoint:
+    Description: Endpoint of the RDS Postgres instance
+    Value: !GetAtt PostgresDBInstance.Endpoint.Address
+
+  RDSInstancePort:
+    Description: Port of the RDS Postgres instance
+    Value: !GetAtt PostgresDBInstance.Endpoint.Port

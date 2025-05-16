@@ -1,0 +1,29 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      java: corretto11
+    commands:
+      - echo Installing Maven
+      - curl -sSL https://apache.mirrors.tds.net/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz | tar -xz
+      - export PATH=$PWD/apache-maven-3.6.3/bin:$PATH
+      - mvn -version
+
+  pre_build:
+    commands:
+      - echo Starting build for Java app
+
+  build:
+    commands:
+      - mvn clean install
+
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - ls -l target/
+
+artifacts:
+  files:
+    - target/*.jar
+  discard-paths: yes

@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EC2 Launch Template and Auto Scaling Group with ALB integration
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID
+
+  Subnet1:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private Subnet 1 ID
+
+  Subnet2:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private Subnet 2 ID
+
+  EC2SecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: EC2 Security Group ID
+
+  TargetGroupArn:
+    Type: String
+    Description: Target Group ARN for ALB
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: EC2 KeyPair name for SSH access
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t2.micro
+      - t2.small
+    Description: EC2 Instance Type
+
+  ImageId:
+    Type: AWS::EC2::Image::Id
+    Description: AMI ID for EC2 instances (Amazon Linux 2 recommended)
+
+Resources:
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: DemoAppLaunchTemplate
+      LaunchTemplateData:
+        ImageId: !Ref ImageId
+        InstanceType: !Ref InstanceType
+        SecurityGroupIds:
+          - !Ref EC2SecurityGroupId
+        KeyName: !Ref KeyName
+        UserData: !Base64 |
+          #!/bin/bash
+          yum update -y
+          yum install -y java-11-amazon-corretto
+          # Fetch your Java demo app JAR from S3 or GitHub (replace URL)
+          aws s3 cp s3://your-bucket/demo-app.jar /home/ec2-user/demo-app.jar
+          # Run your Java application
+          nohup java -jar /home/ec2-user/demo-app.jar > /var/log/demo-app.log 2>&1 &
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: DemoAppASG
+      VPCZoneIdentifier:
+        - !Ref Subnet1
+        - !Ref Subnet2
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: 2
+      MaxSize: 4
+      DesiredCapacity: 2
+      TargetGroupARNs:
+        - !Ref TargetGroupArn
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: DemoAppInstance
+          PropagateAtLaunch: true
+
+Outputs:
+  LaunchTemplateId:
+    Description: Launch Template ID
+    Value: !Ref LaunchTemplate
+
+  AutoScalingGroupName:
+    Description: Auto Scaling Group Name
+    Value: !Ref AutoScalingGroup

@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: S3 Bucket with VPC Gateway Endpoint for private access
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID
+
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private Subnet IDs (used for route tables)
+
+  BucketName:
+    Type: String
+    Default: demo-app-artifacts-bucket
+    Description: S3 bucket name (must be globally unique)
+
+Resources:
+
+  DemoAppS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Name
+          Value: DemoAppS3Bucket
+
+  S3VPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        # We must find all route tables associated with private subnets
+        # Assuming private subnets have main route tables
+        # User must pass route table ids instead if needed (can be enhanced)
+        # Here we will require a parameter for PrivateRouteTableIds instead
+        # For now, let's declare a parameter for it.
+        - !Ref PrivateRouteTable1
+        - !Ref PrivateRouteTable2
+
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DemoAppS3Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowVPCEndpointAccess
+            Effect: Allow
+            Principal: "*"
+            Action:
+              - "s3:GetObject"
+              - "s3:PutObject"
+              - "s3:ListBucket"
+            Resource:
+              - !Sub "arn:aws:s3:::${DemoAppS3Bucket}"
+              - !Sub "arn:aws:s3:::${DemoAppS3Bucket}/*"
+            Condition:
+              StringEquals:
+                "aws:sourceVpce": !Ref S3VPCEndpoint
+
+Parameters:
+  PrivateRouteTable1:
+    Type: String
+    Description: Route table ID associated with private subnet 1
+
+  PrivateRouteTable2:
+    Type: String
+    Description: Route table ID associated with private subnet 2
+
+Outputs:
+  S3BucketName:
+    Description: Name of the S3 Bucket
+    Value: !Ref DemoAppS3Bucket
+
+  VPCEndpointId:
+    Description: ID of the VPC Endpoint for S3
+    Value: !Ref S3VPCEndpoint
